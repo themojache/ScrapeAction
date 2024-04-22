@@ -194,8 +194,8 @@ Promise.all(sites.map(el => axios.get(el))).then(res => {
 		}			
 	}
 	for(var [current,v] of archiveFile.invalid) {
-		if(!lessThanAWeek(new Date(archiveFile.invalid.get(current).date))) {
-			archiveFile.archive.set(current, archiveFile.invalid.get(current));
+		if(!lessThanAWeek(new Date(archiveFile.invalid.get(current).date))) { //Bye!
+			//archiveFile.archive.set(current, archiveFile.invalid.get(current));
 			archiveFile.invalid.remove(current);
 		}			
 	}
