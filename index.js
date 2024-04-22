@@ -190,13 +190,13 @@ Promise.all(sites.map(el => axios.get(el))).then(res => {
 	for(var [current,v] of archiveFile.valid) {
 		if(!lessThanAWeek(new Date(archiveFile.valid.get(current).date))) {
 			archiveFile.archive.set(current, archiveFile.valid.get(current));
-			archiveFile.valid.remove(current);
+			archiveFile.valid.delete(current);
 		}			
 	}
 	for(var [current,v] of archiveFile.invalid) {
 		if(!lessThanAWeek(new Date(archiveFile.invalid.get(current).date))) { //Bye!
 			//archiveFile.archive.set(current, archiveFile.invalid.get(current));
-			archiveFile.invalid.remove(current);
+			archiveFile.invalid.delete(current);
 		}			
 	}
 	for(var [k,v] of archiveFile.valid) {
