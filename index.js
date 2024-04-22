@@ -61,19 +61,33 @@ function fromLinksWithCodes(list) {
 }
 
 
+
+function genshinData(response) {
+	return [...(response.data.posts ?? response.data.list).reduce((acc, post) => {
+		var date = new Date(post.post.created_at * 1000);
+		if(lessThanAWeek(date)) {
+			var body = [post.post.subject, post.post.content].join("\n");
+			for(var code of [...body.matchAll(validCode)].map(el => el[1].trim())) {
+				acc.add(code);
+			}
+		}
+		return acc;
+	}, new Set())];
+}
+
+
 var map = {
-    "https://bbs-api-os.hoyolab.com/community/painter/wapi/search?game_id=2&keyword=Redeem%20Code": (response) => {
-        return [...response.data.posts.reduce((acc, post) => {
-            var date = new Date(post.created_at * 1000);
-            if(lessThanAWeek(date)) {
-                var post = [post.subject, post.content].join("\n");
-                for(var code of [...post.matchAll(validCode)].map(el => el[1].trim())) {
-                    acc.add(code);
-                }
-            }
-            return acc;
-        }, new Set())];
-    },
+	"https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=50&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=33651": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=33651": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=15593": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=112964": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=857": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=203049": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=3070": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=918": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=50&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/painter/wapi/search?game_id=2&keyword=Redeem%20Code": genshinData,
     "https://genshin-impact.fandom.com/wiki/Promotional_Code": (response) => {
         let document = documentTypeParse(response);
         var target = document.querySelector("#All_Codes").parentElement.nextElementSibling.nextElementSibling;
@@ -163,34 +177,49 @@ var map = {
 };
 var validCode = /(?:^|[\s\b\W])([A-Z0-9]{10,25})(?:[\s\b\W]|$)/igm; //longest known is 21, giving a bit of a buffer.
 var testCode = /^([A-Z0-9]{10,25})$/i;
+var testCode2 = /^.*([A-Z].*\d|\d.*[A-Z]).*$/i;
 var exceptions = ["–","-",""," ",":"];
 var sites = Object.keys(map);
 Promise.all(sites.map(el => axios.get(el))).then(res => {
+	var codes = new Set();
 	archiveFile = {
 		valid: new Map(Object.entries(archiveFile.valid)),
 		invalid: new Map(Object.entries(archiveFile.invalid)),
 		archive: new Map(Object.entries(archiveFile.archive))
 	};
-    for(var current in archiveFile.valid) {
-		if(!lessThanAWeek(new Date(archiveFile.valid[current].date))) {
-			archiveFile.archive.set(current, archiveFile.valid[current]);
+	for(var [current,v] of archiveFile.valid) {
+		if(!lessThanAWeek(new Date(archiveFile.valid.get(current).date))) {
+			archiveFile.archive.set(current, archiveFile.valid.get(current));
 			archiveFile.valid.remove(current);
 		}			
 	}
-    for(var current in archiveFile.invalid) {
-		if(!lessThanAWeek(new Date(archiveFile.invalid[current].date))) {
-			archiveFile.archive.set(current, archiveFile.invalid[current]);
+	for(var [current,v] of archiveFile.invalid) {
+		if(!lessThanAWeek(new Date(archiveFile.invalid.get(current).date))) {
+			archiveFile.archive.set(current, archiveFile.invalid.get(current));
 			archiveFile.invalid.remove(current);
 		}			
 	}
+	for(var [k,v] of archiveFile.valid) {
+		codes.add(k.toLowerCase());
+	}
+	for(var [k,v] of archiveFile.invalid) {
+		codes.add(k.toLowerCase());
+	}
+	for(var [k,v] of archiveFile.archive) {
+		codes.add(k.toLowerCase());
+	}
+	
 	var decode = res.reduce((acc, resp) => {
 		var dt = new Date();
 		var host = new URL(resp.config.url).hostname;
 		for(var code of map[resp.config.url](resp.data)) {
-			for(var segment of code.trim().split(/[\s\-–\/,:]/)) {
-				if(segment.length > 0 && !acc.archive.has(segment) && !acc.valid.has(segment) && !acc.invalid.has(segment)) { //!(segment in archiveFile)
-					var valid = testCode.test(segment);
-					(valid ? acc.valid : acc.invalid).set(segment, {
+			for(var segment of code.trim().split(/[\s\-–\/,:]/).filter(el => el.length > 0 && !codes.has(el.toLowerCase()))) {
+				var isForums = host == "bbs-api-os.hoyolab.com";
+				var addTo = testCode.test(segment) && ((isForums && testCode2.test(segment)) || !isForums);
+				var target = (addTo ? acc.valid : acc.invalid);
+				if(!codes.has(segment.toLowerCase()) && !target.has(segment)) {
+					codes.add(segment.toLowerCase());
+					target.set(segment, {
 						date: +dt,
 						site: host
 					});
