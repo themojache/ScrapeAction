@@ -151,7 +151,7 @@ var map = {
         let document = documentTypeParse(response);
         return textOf(document.querySelectorAll("table tbody tr:not(:first-of-type) strong:first-child"));
     },
-    "https://www.supereasy.com/genshin-impact-promo-codes/": (response) => {
+    /*"https://www.supereasy.com/genshin-impact-promo-codes/": (response) => {
         let document = documentTypeParse(response);
         var uls = [document.querySelector("#h-available-codes ~ ul")];
         var lastNode = uls[uls.length - 1];
@@ -159,7 +159,7 @@ var map = {
             uls.push(lastNode = lastNode.nextElementSibling);
         }
         return parseStdUL(uls);
-    },
+    },*/
     "https://ucngame.com/codes/genshin-impact-codes/": (response) => {
         let document = documentTypeParse(response); //formatting inconsistent, strong tags are inside and outside of a tags. Luckily the a tag seems to contain "just the code"'s text'.
         return fromLinksWithCodes(document.querySelectorAll("h3#new-valid-redeem-codes-for-genshin-impact ~ figure table tr td a[href]"));
@@ -219,7 +219,7 @@ Promise.all(sites.map(el => axios.get(el))).then(res => {
 				var target = (addTo ? acc.valid : acc.invalid);
 				if(!codes.has(segment.toLowerCase()) && !target.has(segment)) {
 					codes.add(segment.toLowerCase());
-					target.set(segment, {
+					target.set(segment, { //code[site][dt] = [... (code[site][dt] ?? []), segment];
 						date: +dt,
 						site: host
 					});
