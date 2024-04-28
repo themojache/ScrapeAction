@@ -1,6 +1,8 @@
 const jsdom = require("jsdom");
 const axios = require("axios");
 const fs = require("fs");
+const retry = require("axios-retry-after"); //has a good PR waiting to be merged
+
 
 let archiveFile = require("./codes.json"); //{"valid":{},"invalid":{},"archive":{}}
 
@@ -60,7 +62,51 @@ function fromLinksWithCodes(list) {
     return [...new Set([...fromAElements(list), ...textOf(list)])];
 }
 
-
+function staggerRequests(sites) {
+	var newSites = [];
+	var overflow = new Map();
+	for(var site of sites) {
+		var url = new URL(site).hostname;
+		overflow.set(url, [...(overflow.get(url) ?? []), site]);
+	}
+	for(var key of overflow.keys()) {
+		var arr = overflow.get(key);
+		if(arr.length == 1) {
+			newSites.push(arr[0]);
+			overflow.delete(key);
+		} else {
+			newSites.push(arr.shift());
+			overflow.set(key, arr);
+		}
+	}
+	var sizing = [...overflow.keys()].reduce((acc, el) => {
+		acc[el] = overflow.get(el).length;
+		return acc;
+	}, {});
+	var baseLen = newSites.length - [...overflow.keys()].length;
+	for(var i = 0, len = newSites.length; i < len; i++) {
+		var current = new URL(newSites[i]).hostname;
+		var next = newSites[i + 1] ? new URL(newSites[i + 1]).hostname : "";
+		var keys = [...overflow.keys()].filter(el => el.localeCompare(current) != 0 && el.localeCompare(next) != 0);
+		if(keys.length > 0) {
+			for(var key of keys) {
+				var arr = overflow.get(key);
+				var size = Math.round(sizing[key] / baseLen);
+				var newAdditions = arr.splice(0, size);
+				for(var j = 0, addLen = newAdditions.length; j < addLen; j++) {
+					newSites.splice(i + j + 1, 0, newAdditions[j]); 
+					i++; len++;
+				}
+				if(arr.length == 0) {
+					overflow.delete(key);
+				} else {
+					overflow.set(key, arr);
+				}
+			}
+		}
+	}
+	return newSites;
+}
 
 function genshinData(response) {
 	return [...(response.data.posts ?? response.data.list).reduce((acc, post) => {
@@ -77,8 +123,7 @@ function genshinData(response) {
 
 
 var map = {
-	"https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=50&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
-    "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=33651": genshinData,
+	"https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=100&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=33651": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=15593": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=112964": genshinData,
@@ -86,7 +131,7 @@ var map = {
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=203049": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=3070": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=918": genshinData,
-    "https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=50&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
+    "https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=100&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/search?game_id=2&keyword=Redeem%20Code": genshinData,
     "https://genshin-impact.fandom.com/wiki/Promotional_Code": (response) => {
         let document = documentTypeParse(response);
@@ -180,65 +225,121 @@ var testCode = /^([A-Z0-9]{10,25})$/i;
 var testCode2 = /^.*([A-Z].*\d|\d.*[A-Z]).*$/i;
 var exceptions = ["–","-",""," ",":"];
 var sites = Object.keys(map);
-Promise.all(sites.map(el => axios.get(el))).then(res => {
+
+const client = axios.create();
+client.interceptors.response.use(null, retry(client));
+
+
+function parseCodes(host, dt, codes, acc, code) {
+	var isForums = host == "bbs-api-os.hoyolab.com";
+	for(var segment of code.trim().split(/[\s\-–\/,:]/)) { //.filter(el => el.length > 0 && !codes.has(el.toLowerCase()))
+		var addTo = testCode.test(segment) && ((isForums && testCode2.test(segment)) || !isForums);
+		var target = (addTo ? "valid" : "invalid");
+		var newCode = segment.toLowerCase();
+		if(!codes.has(newCode) && newCode.length > 0) {
+			codes.add(newCode);
+			if(!acc[target]) {
+				acc[target] = {};
+			}
+			var dat = "" + (+dt);
+			if(host in acc[target]) {
+				if(dat in acc[target][host]) {
+					acc[target][host][dat] = [...acc[target][host][dat], segment];
+				} else {
+					acc[target][host][dat] = [segment];
+				}
+			} else {
+				acc[target][host] = {[dat]: [segment]};
+			}
+		}
+	}
+}
+
+
+
+var promises = staggerRequests(sites).map(el => client.get(el)); //Promise.allSettled
+Promise.all(promises).catch(err => {
+	console.log(err);
+	return promises;
+}).then(res => {
 	var codes = new Set();
-	archiveFile = {
-		valid: new Map(Object.entries(archiveFile.valid)),
-		invalid: new Map(Object.entries(archiveFile.invalid)),
-		archive: new Map(Object.entries(archiveFile.archive))
-	};
-	for(var [current,v] of archiveFile.valid) {
-		if(!lessThanAWeek(new Date(archiveFile.valid.get(current).date))) {
-			archiveFile.archive.set(current, archiveFile.valid.get(current));
-			archiveFile.valid.delete(current);
-		}			
-	}
-	for(var [current,v] of archiveFile.invalid) {
-		if(!lessThanAWeek(new Date(archiveFile.invalid.get(current).date))) { //Bye!
-			//archiveFile.archive.set(current, archiveFile.invalid.get(current));
-			archiveFile.invalid.delete(current);
-		}			
-	}
-	for(var [k,v] of archiveFile.valid) {
-		codes.add(k.toLowerCase());
-	}
-	for(var [k,v] of archiveFile.invalid) {
-		codes.add(k.toLowerCase());
-	}
-	for(var [k,v] of archiveFile.archive) {
-		codes.add(k.toLowerCase());
-	}
-	
-	var decode = res.reduce((acc, resp) => {
-		var dt = new Date();
-		var host = new URL(resp.config.url).hostname;
-		for(var code of map[resp.config.url](resp.data)) {
-			for(var segment of code.trim().split(/[\s\-–\/,:]/).filter(el => el.length > 0 && !codes.has(el.toLowerCase()))) {
-				var isForums = host == "bbs-api-os.hoyolab.com";
-				var addTo = testCode.test(segment) && ((isForums && testCode2.test(segment)) || !isForums);
-				var target = (addTo ? acc.valid : acc.invalid);
-				if(!codes.has(segment.toLowerCase()) && !target.has(segment)) {
-					codes.add(segment.toLowerCase());
-					target.set(segment, { //code[site][dt] = [... (code[site][dt] ?? []), segment];
-						date: +dt,
-						site: host
-					});
+	for(var category in archiveFile) {
+		for(var site in archiveFile[category]) {
+			for(var dt in archiveFile[category][site]) {
+				for(var code of archiveFile[category][site][dt]) {
+					codes.add(code.toLowerCase());
 				}
 			}
 		}
+	}
+	
+	
+	for(var site in archiveFile["valid"]) {
+		for(var dt in archiveFile["valid"][site]) {
+			if(!lessThanAWeek(new Date(+dt))) {
+				var acc = archiveFile;
+				var target = "invalid";
+				if(!acc[target]) {
+					acc[target] = {};
+				}
+				if(site in acc[target]) {
+					if(dt in acc[target][site]) {
+						acc[target][site][dt] = [...acc[target][site][dt], code];
+					} else {
+						acc[target][site][dt] = [code];
+					}
+				} else {
+					acc[target][site] = {[dt]: [code]};
+				}
+				delete archiveFile["valid"][site][dt];
+				if(Object.keys(archiveFile["valid"][site]).length == 0) {
+					delete archiveFile["valid"][site];
+				}
+			}
+		}
+	}
+	for(var site in archiveFile["invalid"]) {
+		for(var dt in archiveFile["invalid"][site]) {
+			if(!lessThanAWeek(new Date(+dt))) { //Bye!
+				console.log('Getting rid of old entries from', new Date(+dt));
+				delete archiveFile["invalid"][site][dt];
+				if(Object.keys(archiveFile["invalid"][site]).length == 0) {
+					delete archiveFile["invalid"][site];
+				}
+			}
+		}
+	}
+	
+	var output = res.reduce((acc, resp) => {
+		var dt = new Date();
+		var host = new URL(resp.config.url).hostname;
+		for(var code of map[resp.config.url](resp.data)) {
+			parseCodes(host, dt, codes, acc, code);
+		}
 		return acc;
 	}, archiveFile);
-	fs.writeFile("codes.json", JSON.stringify({
-		valid: Object.fromEntries(decode.valid),
-		invalid: Object.fromEntries(decode.invalid),
-		archive: Object.fromEntries(decode.archive)
-	}), (err) => {
+	
+	var valid = new Set();
+	for(var site in output["valid"]) {
+		for(var dt in output["valid"][site]) {
+			for(var code of output["valid"][site][dt]) {
+				valid.add(code);
+			}
+		}
+	}
+	fs.writeFile("codes.json", JSON.stringify(output), (err) => {
 		if(err) {
 			throw err;
 		}
 		//console.log("Saved");
 	});
-	fs.writeFile("valid.json", JSON.stringify(Object.keys(Object.fromEntries(decode.valid))), (err) => {
+	fs.writeFile("valid.json", JSON.stringify([...valid]), (err) => {
+		if(err) {
+			throw err;
+		}
+		//console.log("Saved");
+	});
+	fs.writeFile("valid.html", [...valid].map(el => "<a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>Code " + el + "</a></br>").join('\n'), (err) => {
 		if(err) {
 			throw err;
 		}
