@@ -168,10 +168,10 @@ var map = {
         let document = documentTypeParse(response);
         return fromLinksWithCodes(document.querySelector("div.list_of_codes div.card_container").querySelectorAll(".reward_code a"));
     },
-    "https://www.pcgamesn.com/genshin-impact/codes-redeem-promo": (response) => {
+    /*"https://www.pcgamesn.com/genshin-impact/codes-redeem-promo": (response) => {
         let document = documentTypeParse(response);
         return parseStdUL(AllExcept(document.querySelectorAll(".entry-content ul"), document.querySelector("h3 ~ ul")));
-    },
+    },*/
     "https://progameguides.com/genshin-impact/genshin-impact-codes/": (response) => {
         let document = documentTypeParse(response);
         return parseStdUL(["h2#genshin-impact-livestream-codes ~ ul", "h3#active-genshin-impact-codes-working ~ ul"].map(el => document.querySelector(el))).filter(el => el.toLowerCase() != "there are currently no active genshin impact livestream codes.");
