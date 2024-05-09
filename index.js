@@ -257,8 +257,8 @@ function parseCodes(host, dt, codes, acc, code) {
 
 
 
-var promises = staggerRequests(sites).map(el => client.get(el)); //Promise.allSettled
-Promise.all(promises).catch(err => {
+var promises = staggerRequests(sites).map(el => client.get(el));
+Promise.allSettled(promises).catch(err => { //should be irrelevant
 	console.log(err);
 	return promises;
 }).then(res => {
@@ -312,9 +312,12 @@ Promise.all(promises).catch(err => {
 	
 	var output = res.reduce((acc, resp) => {
 		var dt = new Date();
-		var host = new URL(resp.config.url).hostname;
-		for(var code of map[resp.config.url](resp.data)) {
-			parseCodes(host, dt, codes, acc, code);
+		var url = resp?.config?.url;
+		if(url) { //otherwise we ran into a bottleneck problem with hoyolab (too many concurrent requests, looking into another solution)
+			var host = new URL(url).hostname;
+			for(var code of map[url](resp.data)) {
+				parseCodes(host, dt, codes, acc, code);
+			}
 		}
 		return acc;
 	}, archiveFile);
