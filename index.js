@@ -41,8 +41,8 @@ function stringToDoc(str) {
 }
 
 
-function fromGiftURL(url) {
-    var parse = new URL(url);
+function fromGiftURL(url, base) {
+    var parse = new URL(url, base);
     const params = new URLSearchParams(parse.search);
     return params.has("code") ? params.get("code") : "";
 }
@@ -55,11 +55,38 @@ function parseStdUL(uls) {
 function textOf(list) {
     return [...new Set([...list].map(no => (no.innerText ?? no.textContent ?? "").trim()))];
 }
-function fromAElements(list) {
-    return [...new Set([...list].map(el => fromGiftURL(el.href)))];
+function fromAElements(list, base) {
+    return [...new Set([...list].map(el => fromGiftURL(el.href, base)))];
 }
-function fromLinksWithCodes(list) {
-    return [...new Set([...fromAElements(list), ...textOf(list)])];
+function fromLinksWithCodes(list, base) {
+    return [...new Set([...fromAElements(list, base), ...textOf(list)])];
+}
+
+function parseCodes(host, dt, codes, acc, code) {
+	//console.log(host, dt, codes, acc, code);
+	var isForums = host == "bbs-api-os.hoyolab.com";
+	for(var segment of code.trim().split(/[\s\-–\/,:]/)) { //.filter(el => el.length > 0 && !codes.has(el.toLowerCase()))
+		var addTo = testCode.test(segment) && ((isForums && testCode2.test(segment)) || !isForums);
+		var target = (addTo ? "valid" : "invalid");
+		var newCode = segment.toLowerCase();
+		//console.log(codes, addTo, newCode);
+		if(!codes.has(newCode) && newCode.length > 0) {
+			codes.add(newCode);
+			if(!acc[target]) {
+				acc[target] = {};
+			}
+			var dat = "" + (+dt);
+			if(host in acc[target]) {
+				if(dat in acc[target][host]) {
+					acc[target][host][dat] = [...acc[target][host][dat], segment];
+				} else {
+					acc[target][host][dat] = [segment];
+				}
+			} else {
+				acc[target][host] = {[dat]: [segment]};
+			}
+		}
+	}
 }
 
 function staggerRequests(sites) {
@@ -108,7 +135,7 @@ function staggerRequests(sites) {
 	return newSites;
 }
 
-function genshinData(response) {
+function genshinData(response, url) {
 	return [...(response.data.posts ?? response.data.list).reduce((acc, post) => {
 		var date = new Date(post.post.created_at * 1000);
 		if(lessThanAWeek(date)) {
@@ -133,9 +160,9 @@ var map = {
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/topic/post/new?loading_type=0&page_size=100&reload_times=0&tab_id=2&topic_id=918": genshinData,
     "https://bbs-api-os.hoyolab.com/community/search/wapi/search/post?author_type=0&game_id=2&is_all_game=false&keyword=primos&order_type=0&page_num=1&page_size=100&preview=true&recommend_word=code&scene=SCENE_GENERAL": genshinData,
     "https://bbs-api-os.hoyolab.com/community/painter/wapi/search?game_id=2&keyword=Redeem%20Code": genshinData,
-    "https://genshin-impact.fandom.com/wiki/Promotional_Code": (response) => {
+    "https://genshin-impact.fandom.com/wiki/Promotional_Code": (response, url) => {
         let document = documentTypeParse(response);
-        var target = document.querySelector("#All_Codes").parentElement.nextElementSibling.nextElementSibling;
+        var target = document.querySelector(".wikitable");//document.querySelector("#All_Codes").parentElement.nextElementSibling.nextElementSibling;
         if(target.nodeName == "TABLE") {
             var parse = /((?:\d{4}\-\d{2}\-\d{2})|indefinite|expired)/igm;
 			var now = new Date(); //.toLocaleString("en-US",{ timeZone: "America/Los_Angeles"});
@@ -143,13 +170,13 @@ var map = {
                 var status = [...cell.getAttribute("data-sort-val").matchAll(parse)].map(date => date[0].toLowerCase());
                 if(status.includes("expired")) {
                 } else if(status.includes("indefinite")) {
-					for(var code of [...textOf(cell.parentElement.firstElementChild.querySelectorAll("code")), ...fromAElements(cell.parentElement.querySelectorAll("a[href^='https://genshin.hoyoverse.com/en/gift?code=']"))]) {
+					for(var code of [...textOf(cell.parentElement.firstElementChild.querySelectorAll("code")), ...fromAElements(cell.parentElement.querySelectorAll("a[href^='https://genshin.hoyoverse.com/en/gift?code=']"), url)]) {
 						acc.add(code);
 					}
                 } else {
                     var dateParsed = status.map(date => new Date(date)).sort((a,b) => b - a);
                     if(+dateParsed[0] > +now && +now > +dateParsed[1]) {
-						for(var code of [...textOf(cell.parentElement.firstElementChild.querySelectorAll("code")), ...fromAElements(cell.parentElement.querySelectorAll("a[href^='https://genshin.hoyoverse.com/en/gift?code=']"))]) {
+						for(var code of [...textOf(cell.parentElement.firstElementChild.querySelectorAll("code")), ...fromAElements(cell.parentElement.querySelectorAll("a[href^='https://genshin.hoyoverse.com/en/gift?code=']"), url)]) {
 							acc.add(code);
 						}
                     }
@@ -158,45 +185,45 @@ var map = {
             }, new Set())];
         }
     },
-    "https://www.pockettactics.com/genshin-impact/codes": (response) => {
+    "https://www.pockettactics.com/genshin-impact/codes": (response, url) => {
         let document = documentTypeParse(response);
         var active = [...document.querySelectorAll("a[data-target='Active-codes'], a[href='#Active-codes']")];
         var uls = active.map(el => el.parentElement.parentElement.parentElement.parentElement.nextElementSibling.nextElementSibling).filter(el => el.nodeName == "UL");
         return parseStdUL(uls);
     },
-    "https://scoofszlo.github.io/genshinimpact_codetracker/": (response) => {
+    "https://scoofszlo.github.io/genshinimpact_codetracker/": (response, url) => {
         let document = documentTypeParse(response);
-        return fromLinksWithCodes(document.querySelector("div.list_of_codes div.card_container").querySelectorAll(".reward_code a"));
+        return fromLinksWithCodes(document.querySelector("div.list_of_codes div.card_container").querySelectorAll(".reward_code a"), url);
     },
-    /*"https://www.pcgamesn.com/genshin-impact/codes-redeem-promo": (response) => {
+    /*"https://www.pcgamesn.com/genshin-impact/codes-redeem-promo": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(AllExcept(document.querySelectorAll(".entry-content ul"), document.querySelector("h3 ~ ul")));
     },*/
-    "https://progameguides.com/genshin-impact/genshin-impact-codes/": (response) => {
+    "https://progameguides.com/genshin-impact/genshin-impact-codes/": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(["h2#genshin-impact-livestream-codes ~ ul", "h3#active-genshin-impact-codes-working ~ ul"].map(el => document.querySelector(el))).filter(el => el.toLowerCase() != "there are currently no active genshin impact livestream codes.");
     },
-    "https://www.gamesradar.com/genshin-impact-codes-redeem/": (response) => {
+    "https://www.gamesradar.com/genshin-impact-codes-redeem/": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(AllExcept(document.querySelectorAll("#article-body ul"), document.querySelector("h2#expired-genshin-impact-redemption-codes-xa0 ~ ul")));
     },
-    "https://www.rockpapershotgun.com/genshin-impact-codes-list": (response) => {
+    "https://www.rockpapershotgun.com/genshin-impact-codes-list": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(["h2#section-1 ~ ul", "h2#section-6 ~ ul"].map(el => document.querySelector(el)));
     },
-    "https://www.vg247.com/genshin-impact-codes": (response) => {
+    "https://www.vg247.com/genshin-impact-codes": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(["h2#codes ~ ul", "h2#livestream-codes ~ ul"].map(el => document.querySelector(el)));
     },
-    "https://www.pocketgamer.com/genshin-impact/codes/": (response) => {
+    "https://www.pocketgamer.com/genshin-impact/codes/": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(document.querySelectorAll(".body-copy ul:first-of-type"));
     },
-    "https://www.ggrecon.com/guides/genshin-impact-codes/": (response) => {
+    "https://www.ggrecon.com/guides/genshin-impact-codes/": (response, url) => {
         let document = documentTypeParse(response);
         return textOf(document.querySelectorAll("table tbody tr:not(:first-of-type) strong:first-child"));
     },
-    /*"https://www.supereasy.com/genshin-impact-promo-codes/": (response) => {
+    /*"https://www.supereasy.com/genshin-impact-promo-codes/": (response, url) => {
         let document = documentTypeParse(response);
         var uls = [document.querySelector("#h-available-codes ~ ul")];
         var lastNode = uls[uls.length - 1];
@@ -205,19 +232,19 @@ var map = {
         }
         return parseStdUL(uls);
     },*/
-    "https://ucngame.com/codes/genshin-impact-codes/": (response) => {
+    "https://ucngame.com/codes/genshin-impact-codes/": (response, url) => {
         let document = documentTypeParse(response); //formatting inconsistent, strong tags are inside and outside of a tags. Luckily the a tag seems to contain "just the code"'s text'.
-        return fromLinksWithCodes(document.querySelectorAll("h3#new-valid-redeem-codes-for-genshin-impact ~ figure table tr td a[href]"));
+        return fromLinksWithCodes(document.querySelectorAll("h3#new-valid-redeem-codes-for-genshin-impact ~ figure table tr td a[href]"), url);
     },
-    "https://game8.co/games/Genshin-Impact/archives/304759": (response) => {
+    "https://game8.co/games/Genshin-Impact/archives/304759": (response, url) => {
         let document = documentTypeParse(response);
         var selector = "h2#hl_1 + h3#hm_1 ~ ol a[href^='https://genshin.hoyoverse.com/en/gift?code='], h2#hl_2 + h3#hm_2 ~ ol a[href^='https://genshin.hoyoverse.com/en/gift?code=']";
-        return fromLinksWithCodes(document.querySelectorAll(selector));
+        return fromLinksWithCodes(document.querySelectorAll(selector), url);
     },
-    "https://gamewith.net/genshin-impact/article/show/22737": (response) => {
+    "https://gamewith.net/genshin-impact/article/show/22737": (response, url) => {
         let document = documentTypeParse(response);
         var table = document.querySelector("a.gdb-btn--green[href='https://genshin.mihoyo.com/en/gift'] ~ div.genshin_table_table table");
-        return fromAElements(table.querySelectorAll("tr td a[href^='https://genshin.hoyoverse.com/en/gift?code=']"));
+        return fromAElements(table.querySelectorAll("tr td a[href^='https://genshin.hoyoverse.com/en/gift?code=']"), url);
     }
 };
 var validCode = /(?:^|[\s\b\W])([A-Z0-9]{10,25})(?:[\s\b\W]|$)/igm; //longest known is 21, giving a bit of a buffer.
@@ -230,33 +257,137 @@ const client = axios.create();
 client.interceptors.response.use(null, retry(client));
 
 
-function parseCodes(host, dt, codes, acc, code) {
-	var isForums = host == "bbs-api-os.hoyolab.com";
-	for(var segment of code.trim().split(/[\s\-–\/,:]/)) { //.filter(el => el.length > 0 && !codes.has(el.toLowerCase()))
-		var addTo = testCode.test(segment) && ((isForums && testCode2.test(segment)) || !isForums);
-		var target = (addTo ? "valid" : "invalid");
-		var newCode = segment.toLowerCase();
-		if(!codes.has(newCode) && newCode.length > 0) {
-			codes.add(newCode);
-			if(!acc[target]) {
-				acc[target] = {};
-			}
-			var dat = "" + (+dt);
-			if(host in acc[target]) {
-				if(dat in acc[target][host]) {
-					acc[target][host][dat] = [...acc[target][host][dat], segment];
-				} else {
-					acc[target][host][dat] = [segment];
-				}
-			} else {
-				acc[target][host] = {[dat]: [segment]};
-			}
-		}
+
+//get a list of elements with [] .length > 0
+//while list has .length > 0
+//pop the elements from those keys
+//Promise.all(requests) => parse
+//delay
+//loop
+
+
+function MakeConcurrentRequests(concurrentRequests) {
+	if(concurrentRequests.length == 0) {
+		return "Done";
 	}
+	setTimeout(() => {
+		var promises = concurrentRequests.map(el => client.get(el));
+		Promise.allSettled(promises).catch(err => { //should be irrelevant
+			console.log(err);
+			return promises;
+		}).then(res => {
+			var codes = new Set();
+			for(var category in archiveFile) {
+				for(var site in archiveFile[category]) {
+					for(var dt in archiveFile[category][site]) {
+						for(var code of archiveFile[category][site][dt]) {
+							codes.add(code.toLowerCase());
+						}
+					}
+				}
+			}
+			
+			
+			for(var site in archiveFile["valid"]) {
+				for(var dt in archiveFile["valid"][site]) {
+					if(!lessThanAWeek(new Date(+dt))) {
+						var acc = archiveFile;
+						var target = "invalid";
+						if(!acc[target]) {
+							acc[target] = {};
+						}
+						if(site in acc[target]) {
+							if(dt in acc[target][site]) {
+								acc[target][site][dt] = [...acc[target][site][dt], code];
+							} else {
+								acc[target][site][dt] = [code];
+							}
+						} else {
+							acc[target][site] = {[dt]: [code]};
+						}
+						delete archiveFile["valid"][site][dt];
+						if(Object.keys(archiveFile["valid"][site]).length == 0) {
+							delete archiveFile["valid"][site];
+						}
+					}
+				}
+			}
+			for(var site in archiveFile["invalid"]) {
+				for(var dt in archiveFile["invalid"][site]) {
+					if(!lessThanAWeek(new Date(+dt))) { //Bye!
+						console.log('Getting rid of old entries from', new Date(+dt));
+						delete archiveFile["invalid"][site][dt];
+						if(Object.keys(archiveFile["invalid"][site]).length == 0) {
+							delete archiveFile["invalid"][site];
+						}
+					}
+				}
+			}
+			
+			var output = res.reduce((acc, resp) => {
+				var dt = new Date();
+				var hasError = resp.value ?? resp;
+				var url = hasError.config?.url;
+				if(url) {
+					var host = new URL(url).hostname;
+					for(var code of map[url](hasError.data, url)) {
+						parseCodes(host, dt, codes, acc, code);
+					}
+				}
+				return acc;
+			}, archiveFile);
+			archiveFile = output;
+		});
+		MakeConcurrentRequests(hosts.filter(site => overflow.get(site).length > 0).map(site => overflow.get(site).pop()));
+	}, delay++ * 1000);
 }
 
 
 
+
+
+var delay = 0;
+var hosts = new Set();
+var overflow = new Map();
+for(var site of sites) {
+	var url = new URL(site).hostname;
+	hosts.add(url);
+	overflow.set(url, [...(overflow.get(url) ?? []), site]);
+}
+hosts = [...hosts]; //inline set to array conversion
+var concurrentRequests = hosts.filter(site => overflow.get(site).length > 0).map(site => overflow.get(site).pop());
+MakeConcurrentRequests(concurrentRequests);
+
+var output = archiveFile;
+var valid = new Set();
+for(var site in output["valid"]) {
+	for(var dt in output["valid"][site]) {
+		for(var code of output["valid"][site][dt]) {
+			valid.add(code);
+		}
+	}
+}
+fs.writeFile("codes.json", JSON.stringify(output), (err) => {
+	if(err) {
+		throw err;
+	}
+	//console.log("Saved");
+});
+fs.writeFile("valid.json", JSON.stringify([...valid]), (err) => {
+	if(err) {
+		throw err;
+	}
+	//console.log("Saved");
+});
+fs.writeFile("valid.html", [...valid].map(el => "<a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>Code " + el + "</a></br>").join('\n'), (err) => {
+	if(err) {
+		throw err;
+	}
+	//console.log("Saved");
+});
+
+
+/*
 var promises = staggerRequests(sites).map(el => client.get(el));
 Promise.allSettled(promises).catch(err => { //should be irrelevant
 	console.log(err);
@@ -312,40 +443,18 @@ Promise.allSettled(promises).catch(err => { //should be irrelevant
 	
 	var output = res.reduce((acc, resp) => {
 		var dt = new Date();
-		var url = resp?.config?.url;
-		if(url) { //otherwise we ran into a bottleneck problem with hoyolab (too many concurrent requests, looking into another solution)
+		//console.log(resp);
+		var hasError = resp.value ?? resp;
+		var url = hasError.config?.url;
+		console.log(url);
+		if(url) {
 			var host = new URL(url).hostname;
-			for(var code of map[url](resp.data)) {
+			//console.log(hasError.data);
+			for(var code of map[url](hasError.data, url)) {
 				parseCodes(host, dt, codes, acc, code);
 			}
 		}
 		return acc;
 	}, archiveFile);
-	
-	var valid = new Set();
-	for(var site in output["valid"]) {
-		for(var dt in output["valid"][site]) {
-			for(var code of output["valid"][site][dt]) {
-				valid.add(code);
-			}
-		}
-	}
-	fs.writeFile("codes.json", JSON.stringify(output), (err) => {
-		if(err) {
-			throw err;
-		}
-		//console.log("Saved");
-	});
-	fs.writeFile("valid.json", JSON.stringify([...valid]), (err) => {
-		if(err) {
-			throw err;
-		}
-		//console.log("Saved");
-	});
-	fs.writeFile("valid.html", [...valid].map(el => "<a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>Code " + el + "</a></br>").join('\n'), (err) => {
-		if(err) {
-			throw err;
-		}
-		//console.log("Saved");
-	});
-});
+	archiveFile = output;
+});*/
