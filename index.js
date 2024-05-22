@@ -256,90 +256,103 @@ var sites = Object.keys(map);
 const client = axios.create();
 client.interceptors.response.use(null, retry(client));
 
-
-
-//get a list of elements with [] .length > 0
-//while list has .length > 0
-//pop the elements from those keys
-//Promise.all(requests) => parse
-//delay
-//loop
-
-
 function MakeConcurrentRequests(concurrentRequests) {
 	if(concurrentRequests.length == 0) {
+		var valid = new Set();
+		for(var site in archiveFile["valid"]) {
+			for(var dt in archiveFile["valid"][site]) {
+				for(var code of archiveFile["valid"][site][dt]) {
+					valid.add(code);
+				}
+			}
+		}
+		fs.writeFile("codes.json", JSON.stringify(archiveFile), (err) => {
+			if(err) {
+				throw err;
+			}
+			//console.log("Saved");
+		});
+		fs.writeFile("valid.json", JSON.stringify([...valid]), (err) => {
+			if(err) {
+				throw err;
+			}
+			//console.log("Saved");
+		});
+		fs.writeFile("valid.html", [...valid].map(el => "<a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>Code " + el + "</a></br>").join('\n'), (err) => {
+			if(err) {
+				throw err;
+			}
+			//console.log("Saved");
+		});
 		return "Done";
 	}
-	setTimeout(() => {
-		var promises = concurrentRequests.map(el => client.get(el));
-		Promise.allSettled(promises).catch(err => { //should be irrelevant
-			console.log(err);
-			return promises;
-		}).then(res => {
-			var codes = new Set();
-			for(var category in archiveFile) {
-				for(var site in archiveFile[category]) {
-					for(var dt in archiveFile[category][site]) {
-						for(var code of archiveFile[category][site][dt]) {
-							codes.add(code.toLowerCase());
-						}
+	var promises = concurrentRequests.map(el => client.get(el));
+	Promise.allSettled(promises).catch(err => { //should be irrelevant
+		console.log(err);
+		return promises;
+	}).then(res => {
+		var codes = new Set();
+		for(var category in archiveFile) {
+			for(var site in archiveFile[category]) {
+				for(var dt in archiveFile[category][site]) {
+					for(var code of archiveFile[category][site][dt]) {
+						codes.add(code.toLowerCase());
 					}
 				}
 			}
-			
-			
-			for(var site in archiveFile["valid"]) {
-				for(var dt in archiveFile["valid"][site]) {
-					if(!lessThanAWeek(new Date(+dt))) {
-						var acc = archiveFile;
-						var target = "invalid";
-						if(!acc[target]) {
-							acc[target] = {};
-						}
-						if(site in acc[target]) {
-							if(dt in acc[target][site]) {
-								acc[target][site][dt] = [...acc[target][site][dt], code];
-							} else {
-								acc[target][site][dt] = [code];
-							}
+		}
+		
+		
+		for(var site in archiveFile["valid"]) {
+			for(var dt in archiveFile["valid"][site]) {
+				if(!lessThanAWeek(new Date(+dt))) {
+					var acc = archiveFile;
+					var target = "invalid";
+					if(!acc[target]) {
+						acc[target] = {};
+					}
+					if(site in acc[target]) {
+						if(dt in acc[target][site]) {
+							acc[target][site][dt] = [...acc[target][site][dt], code];
 						} else {
-							acc[target][site] = {[dt]: [code]};
+							acc[target][site][dt] = [code];
 						}
-						delete archiveFile["valid"][site][dt];
-						if(Object.keys(archiveFile["valid"][site]).length == 0) {
-							delete archiveFile["valid"][site];
-						}
+					} else {
+						acc[target][site] = {[dt]: [code]};
+					}
+					delete archiveFile["valid"][site][dt];
+					if(Object.keys(archiveFile["valid"][site]).length == 0) {
+						delete archiveFile["valid"][site];
 					}
 				}
 			}
-			for(var site in archiveFile["invalid"]) {
-				for(var dt in archiveFile["invalid"][site]) {
-					if(!lessThanAWeek(new Date(+dt))) { //Bye!
-						console.log('Getting rid of old entries from', new Date(+dt));
-						delete archiveFile["invalid"][site][dt];
-						if(Object.keys(archiveFile["invalid"][site]).length == 0) {
-							delete archiveFile["invalid"][site];
-						}
+		}
+		for(var site in archiveFile["invalid"]) {
+			for(var dt in archiveFile["invalid"][site]) {
+				if(!lessThanAWeek(new Date(+dt))) { //Bye!
+					console.log('Getting rid of old entries from', new Date(+dt));
+					delete archiveFile["invalid"][site][dt];
+					if(Object.keys(archiveFile["invalid"][site]).length == 0) {
+						delete archiveFile["invalid"][site];
 					}
 				}
 			}
-			
-			var output = res.reduce((acc, resp) => {
-				var dt = new Date();
-				var hasError = resp.value ?? resp;
-				var url = hasError.config?.url;
-				if(url) {
-					var host = new URL(url).hostname;
-					for(var code of map[url](hasError.data, url)) {
-						parseCodes(host, dt, codes, acc, code);
-					}
+		}
+		for(var resp of res) {
+			var dt = new Date();
+			var hasError = resp.value ?? resp;
+			var url = hasError.config?.url;
+			if(url) {
+				var host = new URL(url).hostname;
+				for(var code of map[url](hasError.data, url)) {
+					parseCodes(host, dt, codes, archiveFile, code);
 				}
-				return acc;
-			}, archiveFile);
-			archiveFile = output;
-		});
-		MakeConcurrentRequests(hosts.filter(site => overflow.get(site).length > 0).map(site => overflow.get(site).pop()));
-	}, delay++ * 1000);
+			}
+		}
+		setTimeout(() => {
+			MakeConcurrentRequests(hosts.filter(site => overflow.get(site).length > 0).map(site => overflow.get(site).pop()));
+		}, delay++ * 1000);
+	});
 }
 
 
@@ -358,33 +371,6 @@ hosts = [...hosts]; //inline set to array conversion
 var concurrentRequests = hosts.filter(site => overflow.get(site).length > 0).map(site => overflow.get(site).pop());
 MakeConcurrentRequests(concurrentRequests);
 
-var output = archiveFile;
-var valid = new Set();
-for(var site in output["valid"]) {
-	for(var dt in output["valid"][site]) {
-		for(var code of output["valid"][site][dt]) {
-			valid.add(code);
-		}
-	}
-}
-fs.writeFile("codes.json", JSON.stringify(output), (err) => {
-	if(err) {
-		throw err;
-	}
-	//console.log("Saved");
-});
-fs.writeFile("valid.json", JSON.stringify([...valid]), (err) => {
-	if(err) {
-		throw err;
-	}
-	//console.log("Saved");
-});
-fs.writeFile("valid.html", [...valid].map(el => "<a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>Code " + el + "</a></br>").join('\n'), (err) => {
-	if(err) {
-		throw err;
-	}
-	//console.log("Saved");
-});
 
 
 /*
