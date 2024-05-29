@@ -6,7 +6,7 @@
 
 ## Inspiration
 - https://github.com/Scoofszlo/genshinimpact_codetracker
-- My main goal was to automate this task.
+- My goal was to automate this task (from scrape to commit).
 
 ## For Bug Fixes and Improvements
 - Feel free to either reach out or submit a PR.
