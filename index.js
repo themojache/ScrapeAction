@@ -1,10 +1,10 @@
 const jsdom = require("jsdom");
 const axios = require("axios");
 const fs = require("fs");
-const retry = require("axios-retry-after"); //has a good PR waiting to be merged
+const retry = require("axios-retry-after");
 
 
-let archiveFile = require("./codes.json"); //{"valid":{},"invalid":{},"archive":{}}
+let archiveFile = require("./codes.json");
 
 function lessThanAWeek(date) {
   return date > Date.now() - (1000 * 60 * 60 * 24 * 7);
@@ -63,13 +63,11 @@ function fromLinksWithCodes(list, base) {
 }
 
 function parseCodes(host, dt, codes, acc, code) {
-	//console.log(host, dt, codes, acc, code);
 	var isForums = host == "bbs-api-os.hoyolab.com";
 	for(var segment of code.trim().split(/[\s\-–\/,:]/)) { //.filter(el => el.length > 0 && !codes.has(el.toLowerCase()))
 		var addTo = testCode.test(segment) && ((isForums && testCode2.test(segment)) || !isForums);
 		var target = (addTo ? "valid" : "invalid");
 		var newCode = segment.toLowerCase();
-		//console.log(codes, addTo, newCode);
 		if(!codes.has(newCode) && newCode.length > 0) {
 			codes.add(newCode);
 			if(!acc[target]) {
@@ -165,7 +163,7 @@ var map = {
         var target = document.querySelector(".wikitable");//document.querySelector("#All_Codes").parentElement.nextElementSibling.nextElementSibling;
         if(target.nodeName == "TABLE") {
             var parse = /((?:\d{4}\-\d{2}\-\d{2})|indefinite|expired)/igm;
-			var now = new Date(); //.toLocaleString("en-US",{ timeZone: "America/Los_Angeles"});
+            var now = new Date(); //.toLocaleString("en-US",{ timeZone: "America/Los_Angeles"});
             return [...[...target.querySelectorAll("tbody tr td[data-sort-val]")].reduce((acc, cell) => {
                 var status = [...cell.getAttribute("data-sort-val").matchAll(parse)].map(date => date[0].toLowerCase());
                 if(status.includes("expired")) {
@@ -199,6 +197,15 @@ var map = {
         let document = documentTypeParse(response);
         return parseStdUL(AllExcept(document.querySelectorAll(".entry-content ul"), document.querySelector("h3 ~ ul")));
     },*/
+    /*"https://www.supereasy.com/genshin-impact-promo-codes/": (response, url) => {
+        let document = documentTypeParse(response);
+        var uls = [document.querySelector("#h-available-codes ~ ul")];
+        var lastNode = uls[uls.length - 1];
+        while(lastNode.nextElementSibling.nodeName == "UL") {
+            uls.push(lastNode = lastNode.nextElementSibling);
+        }
+        return parseStdUL(uls);
+    },*/
     "https://progameguides.com/genshin-impact/genshin-impact-codes/": (response, url) => {
         let document = documentTypeParse(response);
         return parseStdUL(["h2#genshin-impact-livestream-codes ~ ul", "h3#active-genshin-impact-codes-working ~ ul"].map(el => document.querySelector(el))).filter(el => el.toLowerCase() != "there are currently no active genshin impact livestream codes.");
@@ -223,15 +230,6 @@ var map = {
         let document = documentTypeParse(response);
         return textOf(document.querySelectorAll("table tbody tr:not(:first-of-type) strong:first-child"));
     },
-    /*"https://www.supereasy.com/genshin-impact-promo-codes/": (response, url) => {
-        let document = documentTypeParse(response);
-        var uls = [document.querySelector("#h-available-codes ~ ul")];
-        var lastNode = uls[uls.length - 1];
-        while(lastNode.nextElementSibling.nodeName == "UL") {
-            uls.push(lastNode = lastNode.nextElementSibling);
-        }
-        return parseStdUL(uls);
-    },*/
     "https://ucngame.com/codes/genshin-impact-codes/": (response, url) => {
         let document = documentTypeParse(response); //formatting inconsistent, strong tags are inside and outside of a tags. Luckily the a tag seems to contain "just the code"'s text'.
         return fromLinksWithCodes(document.querySelectorAll("h3#new-valid-redeem-codes-for-genshin-impact ~ figure table tr td a[href]"), url);
@@ -355,10 +353,6 @@ function MakeConcurrentRequests(concurrentRequests) {
 	});
 }
 
-
-
-
-
 var delay = 0;
 var hosts = new Set();
 var overflow = new Map();
@@ -370,77 +364,3 @@ for(var site of sites) {
 hosts = [...hosts]; //inline set to array conversion
 var concurrentRequests = hosts.filter(site => overflow.get(site).length > 0).map(site => overflow.get(site).pop());
 MakeConcurrentRequests(concurrentRequests);
-
-
-
-/*
-var promises = staggerRequests(sites).map(el => client.get(el));
-Promise.allSettled(promises).catch(err => { //should be irrelevant
-	console.log(err);
-	return promises;
-}).then(res => {
-	var codes = new Set();
-	for(var category in archiveFile) {
-		for(var site in archiveFile[category]) {
-			for(var dt in archiveFile[category][site]) {
-				for(var code of archiveFile[category][site][dt]) {
-					codes.add(code.toLowerCase());
-				}
-			}
-		}
-	}
-	
-	
-	for(var site in archiveFile["valid"]) {
-		for(var dt in archiveFile["valid"][site]) {
-			if(!lessThanAWeek(new Date(+dt))) {
-				var acc = archiveFile;
-				var target = "invalid";
-				if(!acc[target]) {
-					acc[target] = {};
-				}
-				if(site in acc[target]) {
-					if(dt in acc[target][site]) {
-						acc[target][site][dt] = [...acc[target][site][dt], code];
-					} else {
-						acc[target][site][dt] = [code];
-					}
-				} else {
-					acc[target][site] = {[dt]: [code]};
-				}
-				delete archiveFile["valid"][site][dt];
-				if(Object.keys(archiveFile["valid"][site]).length == 0) {
-					delete archiveFile["valid"][site];
-				}
-			}
-		}
-	}
-	for(var site in archiveFile["invalid"]) {
-		for(var dt in archiveFile["invalid"][site]) {
-			if(!lessThanAWeek(new Date(+dt))) { //Bye!
-				console.log('Getting rid of old entries from', new Date(+dt));
-				delete archiveFile["invalid"][site][dt];
-				if(Object.keys(archiveFile["invalid"][site]).length == 0) {
-					delete archiveFile["invalid"][site];
-				}
-			}
-		}
-	}
-	
-	var output = res.reduce((acc, resp) => {
-		var dt = new Date();
-		//console.log(resp);
-		var hasError = resp.value ?? resp;
-		var url = hasError.config?.url;
-		console.log(url);
-		if(url) {
-			var host = new URL(url).hostname;
-			//console.log(hasError.data);
-			for(var code of map[url](hasError.data, url)) {
-				parseCodes(host, dt, codes, acc, code);
-			}
-		}
-		return acc;
-	}, archiveFile);
-	archiveFile = output;
-});*/
