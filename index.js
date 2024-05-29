@@ -2,9 +2,11 @@ const jsdom = require("jsdom");
 const axios = require("axios");
 const fs = require("fs");
 const retry = require("axios-retry-after");
-
-
 let archiveFile = require("./codes.json");
+
+let [htmlstart, htmlEnd] = ['<!doctype html><html><head><title>Valid Genshin Codes</title><style>@media (prefers-color-scheme: dark){body,html{background: #222;color: #eee;}}</style></head><body><ul>', '</ul></body></html>'];
+
+
 
 function lessThanAWeek(date) {
   return date > Date.now() - (1000 * 60 * 60 * 24 * 7);
@@ -276,7 +278,7 @@ function MakeConcurrentRequests(concurrentRequests) {
 			}
 			//console.log("Saved");
 		});
-		fs.writeFile("valid.html", [...valid].map(el => "<a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>Code " + el + "</a></br>").join('\n'), (err) => {
+		fs.writeFile("valid.html", htmlstart + [...valid].map(el => "<li><a href='https://genshin.hoyoverse.com/en/gift?code=" + el + "'>" + el + "</a></li>").join('\n') + htmlEnd, (err) => {
 			if(err) {
 				throw err;
 			}
