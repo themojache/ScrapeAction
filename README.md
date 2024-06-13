@@ -5,7 +5,7 @@
 - There is a list of potentially valid codes (within codes.json) that have been "thrown out" into the "invalid" bucket as I know my filters are a bit presumptive.
 
 ## Inspiration
-- https://github.com/Scoofszlo/genshinimpact_codetracker
+- [https://github.com/Scoofszlo/genshinimpact_codetracker](https://github.com/Scoofszlo/genshinimpact_codetracker)
 - My goal was to automate this task (from scrape to commit).
 
 ## For Bug Fixes and Improvements
