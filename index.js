@@ -52,7 +52,7 @@ function AllExcept(els, except) {
     return Array.isArray(except) ? [...els].filter(el => !except.includes(el)) : [...els].filter(el => el != except);
 }
 function parseStdUL(uls) {
-    return [...new Set([...uls].map(el => textOf(el.querySelectorAll("li strong:first-child")).filter(no => !exceptions.includes(no))).flat(Infinity))];
+    return [...new Set([...uls].filter(el => el)?.map(el => textOf(el?.querySelectorAll("li strong:first-child")).filter(no => !exceptions.includes(no)))?.flat(Infinity))];
 }
 function textOf(list) {
     return [...new Set([...list].map(no => (no.innerText ?? no.textContent ?? "").trim()))];
