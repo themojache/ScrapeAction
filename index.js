@@ -243,8 +243,8 @@ var map = {
     },
     "https://gamewith.net/genshin-impact/article/show/22737": (response, url) => {
         let document = documentTypeParse(response);
-        var table = document.querySelector("a.gdb-btn--green[href='https://genshin.mihoyo.com/en/gift'] ~ div.genshin_table_table table");
-        return fromAElements(table.querySelectorAll("tr td a[href^='https://genshin.hoyoverse.com/en/gift?code=']"), url);
+        //var table = document.querySelector("a.gdb-btn--green[href='https://genshin.mihoyo.com/en/gift'] ~ div.genshin_table_table table");
+        return fromAElements(document.querySelectorAll("tr td a[href^='https://genshin.hoyoverse.com/en/gift?code=']"), url);
     }
 };
 var validCode = /(?:^|[\s\b\W])([A-Z0-9]{10,25})(?:[\s\b\W]|$)/igm; //longest known is 21, giving a bit of a buffer.
