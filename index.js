@@ -136,8 +136,8 @@ function staggerRequests(sites) {
 }
 
 function genshinData(response, url) {
-	return [...(response.data.posts ?? response.data.list).reduce((acc, post) => {
-		var date = new Date(post.post.created_at * 1000);
+	return [...(response?.data?.posts ?? response?.data?.list ?? []).reduce((acc, post) => {
+		var date = new Date(post?.post?.created_at * 1000);
 		if(lessThanAWeek(date)) {
 			var body = [post.post.subject, post.post.content].join("\n");
 			for(var code of [...body.matchAll(validCode)].map(el => el[1].trim())) {
